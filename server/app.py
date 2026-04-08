@@ -19,6 +19,27 @@ from pydantic import BaseModel
 from models import FinDocAction, FinDocObservation
 from server.findoc_environment import FinDocEnvironment
 
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Optional
+
+app = FastAPI()
+
+DEFAULT_TASK_ID = "task1_invoice_parser"  # or whatever you want
+
+class ResetRequest(BaseModel):
+    task_id: Optional[str] = None
+
+@app.post("/reset")
+def reset(req: ResetRequest = None):
+    # allow empty body
+    task_id = DEFAULT_TASK_ID
+    if req is not None and req.task_id is not None:
+        task_id = req.task_id
+
+    # then call your environment reset(task_id=task_id)
+    state = env.reset(task_id=task_id)
+    return state
 
 # ─────────────────────────────────────────────
 # App setup
