@@ -1,6 +1,6 @@
 ---
 title: FinDocAgentEnv
-emoji: ":page_facing_up:"
+emoji: 📄
 colorFrom: blue
 colorTo: indigo
 sdk: docker
@@ -14,12 +14,3 @@ license: mit
 OpenEnv environment for financial document processing.
 
 Tasks: invoice parsing, anomaly detection, 3-way reconciliation.
-
-## Endpoints
-
-- POST /reset
-- POST /step
-- GET  /state
-- GET  /tasks
-- POST /grader
-- POST /baseline
