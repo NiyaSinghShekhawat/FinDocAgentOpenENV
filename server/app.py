@@ -19,27 +19,16 @@ from pydantic import BaseModel
 from models import FinDocAction, FinDocObservation
 from server.findoc_environment import FinDocEnvironment
 
+from typing import Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Optional
 
 app = FastAPI()
 
-DEFAULT_TASK_ID = "task1_invoice_parser"  # or whatever you want
+DEFAULT_TASK_ID = "task1_invoice_parser"  # choose your default
 
 class ResetRequest(BaseModel):
     task_id: Optional[str] = None
-
-@app.post("/reset")
-def reset(req: ResetRequest = None):
-    # allow empty body
-    task_id = DEFAULT_TASK_ID
-    if req is not None and req.task_id is not None:
-        task_id = req.task_id
-
-    # then call your environment reset(task_id=task_id)
-    state = env.reset(task_id=task_id)
-    return state
 
 # ─────────────────────────────────────────────
 # App setup
@@ -158,12 +147,24 @@ def root():
     }
 
 
-@app.post("/reset")
-def reset(req: ResetRequest) -> ObsResponse:
-    session_id, env = _get_or_create_session(req.session_id)
-    obs = env.reset(task_id=req.task_id, seed=req.seed)
-    return _obs_to_response(session_id, obs)
+from typing import Optional
 
+@app.post("/reset")
+def reset(req: Optional[ResetRequest] = None) -> ObsResponse:
+    # Accept empty body from checker
+    task_id = DEFAULT_TASK_ID
+    seed = None
+    session_id = None
+
+    if req is not None:
+        if getattr(req, "task_id", None) is not None:
+            task_id = req.task_id
+        seed = getattr(req, "seed", None)
+        session_id = getattr(req, "session_id", None)
+
+    session_id, env = _get_or_create_session(session_id)
+    obs = env.reset(task_id=task_id, seed=seed)
+    return _obs_to_response(session_id, obs)
 
 @app.post("/step")
 def step(req: StepRequest) -> ObsResponse:
