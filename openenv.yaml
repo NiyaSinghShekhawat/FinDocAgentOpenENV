@@ -1,0 +1,230 @@
+name: findocagent-env
+version: "1.0.0"
+description: >
+  An RL environment where an AI agent learns to process financial documents
+  like a senior AP/AR analyst — parsing invoices, detecting anomalies, and
+  reconciling Purchase Orders with Invoices and Goods Receipt Notes.
+
+author: your-hf-username
+license: BSD-3-Clause
+homepage: https://huggingface.co/spaces/your-hf-username/findocagent-env
+
+tags:
+  - finance
+  - document-processing
+  - invoice-parsing
+  - anomaly-detection
+  - reconciliation
+  - openenv
+
+# ─────────────────────────────────────────────
+# Tasks
+# ─────────────────────────────────────────────
+
+tasks:
+  - id: task1_invoice_parser
+    name: Invoice Parser
+    difficulty: easy
+    description: >
+      Extract structured fields from a noisy invoice document.
+      Fields include vendor name, invoice number, PO reference,
+      dates, line items, subtotal, tax, and total amount.
+    max_steps: 20
+    pass_threshold: 0.70
+    reward_range: [-1.0, 1.0]
+    valid_actions:
+      - extract
+      - skip
+
+  - id: task2_anomaly_detector
+    name: Anomaly Detector
+    difficulty: medium
+    description: >
+      Review a batch of 8 invoices against company policy rules.
+      Identify and flag anomalies such as duplicate invoices,
+      amounts exceeding PO limits, missing PO references,
+      unapproved vendors, future-dated invoices, and tax errors.
+    max_steps: 30
+    pass_threshold: 0.60
+    reward_range: [-1.0, 1.0]
+    valid_actions:
+      - flag
+      - reconcile
+      - skip
+
+  - id: task3_three_way_reconciler
+    name: 3-Way PO/Invoice/GRN Reconciler
+    difficulty: hard
+    description: >
+      Reconcile a Purchase Order, Invoice, and Goods Receipt Note.
+      Identify discrepancies (quantity mismatches, price deviations,
+      missing line items, short deliveries) and make a final
+      approval / rejection / escalation decision with justification.
+    max_steps: 50
+    pass_threshold: 0.55
+    reward_range: [-1.0, 1.0]
+    valid_actions:
+      - match
+      - reconcile
+      - skip
+
+# ─────────────────────────────────────────────
+# Action space
+# ─────────────────────────────────────────────
+
+action_space:
+  type: structured
+  fields:
+    action_type:
+      type: string
+      enum: [extract, flag, match, reconcile, skip]
+      description: The type of action to take
+    field:
+      type: string
+      description: Field name (for extract) or anomaly/discrepancy type (for flag/match)
+    value:
+      type: string
+      description: Extracted value or description
+    reason:
+      type: string
+      description: Explanation (required for flag and reconcile)
+    severity:
+      type: string
+      enum: [low, medium, high, critical]
+      description: Severity level (for flag actions)
+    decision:
+      type: string
+      enum: [approve, reject, escalate]
+      description: Final decision (for reconcile actions)
+    doc_ref:
+      type: string
+      description: Document reference ID (invoice_id for flag, doc name for match)
+
+# ─────────────────────────────────────────────
+# Observation space
+# ─────────────────────────────────────────────
+
+observation_space:
+  type: structured
+  fields:
+    task_id:
+      type: string
+      description: Active task identifier
+    document:
+      type: object
+      description: Primary document content (invoice or batch)
+    aux_documents:
+      type: object
+      description: Secondary documents (PO, GRN) for task3
+    extracted:
+      type: object
+      description: Fields extracted by agent so far
+    flags:
+      type: array
+      description: Anomaly flags raised by agent
+    matches:
+      type: array
+      description: Discrepancy match assertions made by agent
+    step_count:
+      type: integer
+      description: Steps used in current episode
+    max_steps:
+      type: integer
+      description: Maximum steps allowed
+    done:
+      type: boolean
+      description: Whether the episode has ended
+    reward:
+      type: number
+      description: Reward for the last action
+    cumulative_reward:
+      type: number
+      description: Total reward accumulated so far
+    score:
+      type: number
+      description: Final grader score 0.0-1.0 (populated when done=true)
+    message:
+      type: string
+      description: Human-readable feedback on last action
+    valid_actions:
+      type: array
+      description: List of valid action types for current state
+
+# ─────────────────────────────────────────────
+# Reward function
+# ─────────────────────────────────────────────
+
+reward_function:
+  type: shaped
+  description: >
+    Dense reward function providing signal throughout the episode.
+    Not just binary win/lose — every correct action is rewarded.
+  components:
+    - name: correct_extraction
+      value: +0.15
+      trigger: Agent correctly extracts a field (Task 1)
+    - name: wrong_extraction
+      value: -0.10
+      trigger: Agent extracts wrong value or hallucinates
+    - name: repeat_extraction
+      value: -0.05
+      trigger: Agent re-extracts an already-extracted field
+    - name: correct_flag
+      value: +0.20
+      trigger: Agent correctly flags a real anomaly (Task 2)
+    - name: wrong_flag
+      value: -0.15
+      trigger: Agent raises a false positive flag
+    - name: correct_match
+      value: +0.15
+      trigger: Agent correctly identifies a discrepancy (Task 3)
+    - name: wrong_match
+      value: -0.10
+      trigger: Agent reports a non-existent discrepancy
+    - name: correct_decision
+      value: +0.30
+      trigger: Agent makes the correct reconciliation decision
+    - name: wrong_decision
+      value: -0.20
+      trigger: Agent makes wrong approval/rejection decision
+    - name: step_penalty
+      value: -0.02
+      trigger: Every step (encourages efficiency)
+    - name: completion_bonus
+      value: +0.50
+      trigger: Episode score >= 0.80 (perfect/near-perfect run)
+
+# ─────────────────────────────────────────────
+# Server configuration
+# ─────────────────────────────────────────────
+
+server:
+  host: 0.0.0.0
+  port: 7860
+  framework: fastapi
+  endpoints:
+    - GET  /health
+    - POST /reset
+    - POST /step
+    - GET  /state
+    - GET  /tasks
+    - POST /grader
+    - POST /baseline
+
+# ─────────────────────────────────────────────
+# Environment metadata
+# ─────────────────────────────────────────────
+
+environment:
+  language: python
+  python_version: "3.10"
+  domain: finance
+  task_type: document-processing
+  observation_type: structured-json
+  action_type: structured-discrete
+  episode_termination:
+    - max_steps_reached
+    - agent_calls_reconcile
+    - all_fields_extracted
+  reproducible: true
+  deterministic_graders: true
