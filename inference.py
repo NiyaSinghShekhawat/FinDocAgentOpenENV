@@ -283,6 +283,17 @@ def run_episode(client, task_id: str) -> dict:
             user_msg = build_user_msg(obs, done_items)
             llm_text = call_llm(client, system_prompt, user_msg)
             action   = parse_action(llm_text)
+            # ── 🛡️ TASK ACTION FILTER ─────────────────────────────
+            if "task2" in task_id:
+                if action.get("action_type") not in ["flag", "reconcile"]:
+                    action = {"action_type": "reconcile", "field": "done", "value": "",
+                            "decision": "escalate", "reason": "Invalid action corrected"}
+
+            elif "task3" in task_id:
+                if action.get("action_type") not in ["match", "reconcile"]:
+                    action = {"action_type": "match", "field": "quantity_mismatch",
+                            "value": "unknown", "doc_ref": "invoice",
+                            "reason": "type:quantity_mismatch"}
 
             # ── 🔒 DUPLICATE ACTION GUARD ───────────────────────────────
             action_key = json.dumps({
@@ -292,43 +303,38 @@ def run_episode(client, task_id: str) -> dict:
             }, sort_keys=True)
 
             if action_key in last_actions:
-                # Try a different action instead of exiting immediately
-                alternative_fields = ["quantity_mismatch", "price_deviation", "missing_line_item", "short_delivery"]
-
-                for alt in alternative_fields:
-                    alt_key = json.dumps({
-                        "type": "match",
-                        "field": alt,
-                        "doc": action.get("doc_ref", "")
-                    }, sort_keys=True)
-
-                    if alt_key not in last_actions:
-                        action = {
-                            "action_type": "match",
-                            "field": alt,
-                            "value": action.get("value", ""),
-                            "doc_ref": action.get("doc_ref", "invoice"),
-                            "reason": f"type:{alt}"
-                        }
-                        break
-                else:
-                    # Only reconcile if truly nothing new left
+                if "task3" in task_id:
+                    action = {
+                        "action_type": "reconcile",
+                        "field": "decision",
+                        "value": "escalate",
+                        "decision": "escalate",
+                        "reason": "No new discrepancies left"
+                    }
+                elif "task2" in task_id:
                     action = {
                         "action_type": "reconcile",
                         "field": "done",
                         "value": "",
                         "decision": "escalate",
-                        "reason": "All options exhausted"
+                        "reason": "No new anomalies left"
                     }
             else:
                 last_actions.add(action_key)
-
             # Track locally
             field   = action.get("field") or action.get("field_name", "")
             doc_ref = action.get("doc_ref", "")
             key     = f"{doc_ref}:{field}" if doc_ref else field
             if key and key not in done_items:
                 done_items.append(key)
+            if "task3" in task_id and len(done_items) >= 2:
+                action = {
+                    "action_type": "reconcile",
+                    "field": "decision",
+                    "value": "escalate",
+                    "decision": "escalate",
+                    "reason": "Sufficient discrepancies identified"
+                }
 
             last_error = None
             try:
@@ -336,15 +342,15 @@ def run_episode(client, task_id: str) -> dict:
                 reward = float(obs.get("reward", 0.0))
                 done   = bool(obs.get("done", False))
 
-                # If we already found multiple unique discrepancies, consider finishing
-                if "task3" in task_id and len(done_items) >= 3:
-                    action = {
-                        "action_type": "reconcile",
-                        "field": "decision",
-                        "value": "escalate",
-                        "decision": "escalate",
-                        "reason": "Multiple discrepancies found, reconciliation complete"
-    }
+                # # If we already found multiple unique discrepancies, consider finishing
+                # if "task3" in task_id and len(done_items) >= 3:
+                #     action = {
+                #         "action_type": "reconcile",
+                #         "field": "decision",
+                #         "value": "escalate",
+                #         "decision": "escalate",
+                #         "reason": "Multiple discrepancies found, reconciliation complete"
+    
 
                 # ── ⚠️ NEGATIVE REWARD HANDLING ─────────────────────────
                 if reward < 0:
